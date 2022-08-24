@@ -5,6 +5,7 @@ import os
 from typing import Any, Dict, cast
 
 from ruamel.yaml import YAML
+import voluptuous as vol
 
 from ecowitt2mqtt.const import (
     CONF_BATTERY_OVERRIDES,
@@ -28,6 +29,10 @@ from ecowitt2mqtt.const import (
     CONF_PORT,
     CONF_RAW_DATA,
     CONF_VERBOSE,
+    DEFAULT_ENDPOINT,
+    DEFAULT_HASS_DISCOVERY_PREFIX,
+    DEFAULT_MQTT_PORT,
+    DEFAULT_PORT,
     ENV_BATTERY_OVERRIDE,
     ENV_ENDPOINT,
     ENV_HASS_DISCOVERY,
@@ -58,10 +63,16 @@ from ecowitt2mqtt.const import (
     LEGACY_ENV_PORT,
     LEGACY_ENV_RAW_DATA,
     LOGGER,
+    UNIT_SYSTEMS,
+    UNIT_SYSTEM_IMPERIAL,
 )
 from ecowitt2mqtt.errors import EcowittError
 from ecowitt2mqtt.helpers.calculator.battery import BatteryStrategy
+import ecowitt2mqtt.helpers.config_validation as cv
 from ecowitt2mqtt.helpers.typing import UnitSystemType
+
+CONF_DEFAULT = "default"
+CONF_GATEWAYS = "gateways"
 
 DEPRECATED_ENV_VAR_MAP = {
     LEGACY_ENV_ENDPOINT: ENV_ENDPOINT,
@@ -79,6 +90,40 @@ DEPRECATED_ENV_VAR_MAP = {
     LEGACY_ENV_PORT: ENV_PORT,
     LEGACY_ENV_RAW_DATA: ENV_RAW_DATA,
 }
+
+CONFIG_SCHEMA = vol.All(
+    cv.has_at_least_one_key(CONF_HASS_DISCOVERY, CONF_MQTT_TOPIC),
+    vol.Schema(
+        {
+            vol.Required(CONF_MQTT_BROKER): cv.string,
+            vol.Exclusive(CONF_HASS_DISCOVERY, "publisher", default=False): cv.boolean,
+            vol.Exclusive(CONF_MQTT_TOPIC, "publisher"): cv.string,
+            vol.Optional(
+                CONF_DEFAULT_BATTERY_STRATEGY, default=BatteryStrategy.BOOLEAN
+            ): vol.All(cv.string, vol.In(BatteryStrategy)),
+            vol.Optional(CONF_DIAGNOSTICS, default=False): cv.boolean,
+            vol.Optional(CONF_DISABLE_CALCULATED_DATA, default=False): cv.boolean,
+            vol.Optional(CONF_ENDPOINT, default=DEFAULT_ENDPOINT): cv.string,
+            vol.Optional(
+                CONF_HASS_ENTITY_ID_PREFIX, default=DEFAULT_HASS_DISCOVERY_PREFIX
+            ): cv.string,
+            vol.Optional(CONF_INPUT_UNIT_SYSTEM, default=UNIT_SYSTEM_IMPERIAL): vol.All(
+                cv.string, vol.In(UNIT_SYSTEMS)
+            ),
+            vol.Optional(CONF_MQTT_PASSWORD): cv.string,
+            vol.Optional(CONF_MQTT_PORT, default=DEFAULT_MQTT_PORT): cv.port,
+            vol.Optional(CONF_MQTT_RETAIN, default=False): cv.boolean,
+            vol.Optional(CONF_MQTT_TLS, default=False): cv.boolean,
+            vol.Optional(CONF_MQTT_USERNAME, default=False): cv.boolean,
+            vol.Optional(
+                CONF_OUTPUT_UNIT_SYSTEM, default=UNIT_SYSTEM_IMPERIAL
+            ): vol.All(cv.string, vol.In(UNIT_SYSTEMS)),
+            vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
+            vol.Optional(CONF_RAW_DATA, default=False): cv.boolean,
+            vol.Optional(CONF_VERBOSE, default=False): cv.boolean,
+        }
+    ),
+)
 
 
 class ConfigError(EcowittError):
@@ -112,47 +157,29 @@ def convert_battery_config(configs: str | tuple) -> dict[str, BatteryStrategy]:
 class Config:
     """Define the configuration management object."""
 
-    def __init__(self, params: dict[str, Any]) -> None:
+    def __init__(self, config_id: str, config: dict[str, Any]) -> None:
         """Initialize."""
-        LOGGER.debug("CLI options: %s", params)
+        LOGGER.debug("Initializing config ID %s with data: %s", config_id, config)
 
-        for legacy_env_var, new_env_var in DEPRECATED_ENV_VAR_MAP.items():
-            if os.getenv(legacy_env_var) is None:
-                continue
-            LOGGER.warning(
-                "Environment variable %s is deprecated; use %s instead",
-                legacy_env_var,
-                new_env_var,
-            )
+        # if CONF_MQTT_BROKER not in config:
+        #     raise ConfigError(
+        #         f"Missing required configuration option: {CONF_MQTT_BROKER}"
+        #     )
 
-        self._config = {}
+        # if not any(
+        #     data.get(key)
+        #     for key in (CONF_MQTT_TOPIC, CONF_HASS_DISCOVERY)
+        #     for data in (self._config, params)
+        # ):
+        #     raise ConfigError(
+        #         "Missing required option: --mqtt-topic or --hass-discovery"
+        #     )
 
-        # If the user provides a config file, attempt to load it:
-        if config_path := params.get(CONF_CONFIG):
-            parser = YAML(typ="safe")
-            with open(config_path, encoding="utf-8") as config_file:
-                self._config = parser.load(config_file)
-
-        if not isinstance(self._config, dict):
-            raise ConfigError(f"Unable to parse config file: {config_path}")
-
-        if not any(data.get(CONF_MQTT_BROKER) for data in (self._config, params)):
-            raise ConfigError("Missing required option: --mqtt-broker")
-
-        if not any(
-            data.get(key)
-            for key in (CONF_MQTT_TOPIC, CONF_HASS_DISCOVERY)
-            for data in (self._config, params)
-        ):
-            raise ConfigError(
-                "Missing required option: --mqtt-topic or --hass-discovery"
-            )
-
-        self._config.setdefault(CONF_BATTERY_OVERRIDES, {})
+        self._config = {CONF_BATTERY_OVERRIDES: {}}
 
         # Merge the CLI options/environment variables; if the value is falsey (but *not*
         # False), ignore it:
-        for key, value in params.items():
+        for key, value in config.items():
             if key == CONF_DEFAULT_BATTERY_STRATEGY:
                 self._config[key] = BatteryStrategy(value)
             if value is not None:
@@ -270,3 +297,48 @@ class Config:
     def verbose(self) -> bool:
         """Return whether verbose logging is enabled."""
         return cast(bool, self._config.get(CONF_VERBOSE, False))
+
+
+class ConfigFileManager:
+    """Define a manager of data loaded from a config file."""
+
+    def __init__(self) -> None:
+        """Initialize."""
+        self._cli_options_env_vars: dict[str, Any] = {}
+        self._config_file_data: dict[str, Any] = {}
+        self._configs: dict[str, Config] = {}
+
+    @property
+    def configs(self) -> dict[str, Config]:
+        """Return all parsed Config objects."""
+        return self._configs
+
+    def load_cli_options_env_vars(self, cli_options_env_vars: dict[str, Any]) -> None:
+        """Load config data from CLI options/env vars."""
+        self._cli_options_env_vars = cli_options_env_vars
+
+    def load_config_file(self, config_path: str) -> None:
+        """Load config data from a YAML or JSON file."""
+        for legacy_env_var, new_env_var in DEPRECATED_ENV_VAR_MAP.items():
+            if os.getenv(legacy_env_var) is None:
+                continue
+            LOGGER.warning(
+                "Environment variable %s is deprecated; use %s instead",
+                legacy_env_var,
+                new_env_var,
+            )
+
+        parser = YAML(typ="safe")
+        with open(config_path, encoding="utf-8") as config_file:
+            self._config_file_data = parser.load(config_file)
+
+        if not isinstance(self._config_file_data, dict):
+            raise ConfigError(f"Unable to parse config file: {config_path}")
+
+        # default_config = file_config_data.get(CONF_DEFAULT, {})
+        # LOGGER.debug("Default config from config file: %s", default_config)
+        # gateways_config = file_config_data.get(CONF_GATEWAYS, {})
+        # LOGGER.debug("Gateway configs from config file: %s", gateways_config)
+
+        # for passkey, gateway_config in gateways_config.items():
+        #     merged_config = {**default_config, **gateway_config}

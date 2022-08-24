@@ -8,6 +8,10 @@ import uvloop
 
 from ecowitt2mqtt.const import (
     CONF_VERBOSE,
+    DEFAULT_ENDPOINT,
+    DEFAULT_HASS_DISCOVERY_PREFIX,
+    DEFAULT_MQTT_PORT,
+    DEFAULT_PORT,
     ENV_BATTERY_OVERRIDE,
     ENV_CONFIG,
     ENV_DEFAULT_BATTERY_STRATEGY,
@@ -44,23 +48,19 @@ from ecowitt2mqtt.const import (
     LEGACY_ENV_RAW_DATA,
     UNIT_SYSTEM_IMPERIAL,
     UNIT_SYSTEM_METRIC,
+    UNIT_SYSTEMS,
     __version__ as ecowitt2mqtt_version,
 )
 from ecowitt2mqtt.core import Ecowitt
 from ecowitt2mqtt.helpers.calculator.battery import BatteryStrategy
 from ecowitt2mqtt.helpers.logging import log_exception
 
-DEFAULT_ENDPOINT = "/data/report"
-DEFAULT_HASS_DISCOVERY_PREFIX = "homeassistant"
-DEFAULT_MQTT_PORT = 1883
-DEFAULT_PORT = 8080
-
 
 def validate_unit_system(value: str) -> str:
     """Validate a passed unit system."""
-    if value not in (UNIT_SYSTEM_IMPERIAL, UNIT_SYSTEM_METRIC):
+    if value not in UNIT_SYSTEMS:
         raise typer.BadParameter(
-            f"'{value}' is not one of '{UNIT_SYSTEM_IMPERIAL}', '{UNIT_SYSTEM_METRIC}'"
+            f"'{value}' is not one of {', '.join(system for system in UNIT_SYSTEMS)}"
         )
     return value
 
