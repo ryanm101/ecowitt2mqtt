@@ -6,7 +6,7 @@ import pytest
 from ecowitt2mqtt.const import (
     CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
     CONCENTRATION_PARTS_PER_MILLION,
-    CONF_BATTERY_OVERRIDES,
+    CONF_BATTERY_OVERRIDE,
     CONF_DEFAULT_BATTERY_STRATEGY,
     CONF_DISABLE_CALCULATED_DATA,
     CONF_INPUT_UNIT_SYSTEM,
@@ -53,7 +53,7 @@ from tests.common import TEST_CONFIG_JSON
     [
         {
             **TEST_CONFIG_JSON,
-            CONF_BATTERY_OVERRIDES: (
+            CONF_BATTERY_OVERRIDE: (
                 "wh40batt=numeric",
                 "soilbatt1=numeric",
                 "wh26batt=percentage",

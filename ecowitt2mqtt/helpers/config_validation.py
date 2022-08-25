@@ -1,32 +1,46 @@
 """Helpers for config validation using voluptuous."""
 from __future__ import annotations
 
-from collections.abc import Callable
 from numbers import Number
 from typing import Any
 
 import voluptuous as vol
 
+from ecowitt2mqtt.helpers.calculator.battery import BatteryStrategy
 
-def has_at_least_one_key(*keys: Any) -> Callable[[dict], dict]:
-    """Validate that at least one key exists.
 
-    Adapted from:
-    https://github.com/alecthomas/voluptuous/issues/115#issuecomment-144464666
-    """
+def battery_override(
+    value: str | tuple[str, str] | dict[str, Any]
+) -> dict[str, BatteryStrategy]:
+    """Validate and coerce one or more battery overrides."""
+    try:
+        if isinstance(value, dict):
+            return {key: BatteryStrategy(val) for key, val in value.items()}
 
-    def validate(obj: dict) -> dict:
-        """Test keys exist in dict."""
-        if not isinstance(obj, dict):
-            raise vol.Invalid("Invalid object (expected a dictionary)")
+        if isinstance(value, tuple):
+            return {
+                pair[0]: BatteryStrategy(pair[1])
+                for assignment in value
+                if (pair := assignment.split("="))
+            }
 
-        for k in obj:
-            if k in keys:
-                return obj
-        expected = ", ".join(str(k) for k in keys)
-        raise vol.Invalid(f"Must contain at least one of: {expected}")
+        return {
+            pair[0]: BatteryStrategy(pair[1])
+            for assignment in value.split(";")
+            if (pair := assignment.split("="))
+        }
+    except IndexError as err:
+        raise vol.Invalid(f"invalid battery override definition: {value}") from err
+    except ValueError as err:
+        raise vol.Invalid(f"invalid battery override value: {value}") from err
 
-    return validate
+
+def battery_strategy(value: str) -> BatteryStrategy:
+    """Validate and coerce a battery strategy."""
+    try:
+        return BatteryStrategy(value)
+    except ValueError as err:
+        raise vol.Invalid(f"invalid strategy: {value}") from err
 
 
 def boolean(value: Any) -> bool:
@@ -42,16 +56,16 @@ def boolean(value: Any) -> bool:
     elif isinstance(value, Number):
         # type ignore: https://github.com/python/mypy/issues/3186
         return value != 0  # type: ignore[comparison-overlap]
-    raise vol.Invalid(f"Invalid boolean value: {value}")
+    raise vol.Invalid(f"invalid boolean value: {value}")
 
 
 port = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
 
 
-def string(value: Any) -> str:
+def string(value: Any) -> str | None:
     """Validate and coerce a value to string, except for None."""
     if value is None:
-        raise vol.Invalid("Invalid string value: None")
+        return None
     if isinstance(value, (list, dict)):
-        raise vol.Invalid(f"Invalid string value: {value}")
+        raise vol.Invalid(f"invalid string value: {value}")
     return str(value)

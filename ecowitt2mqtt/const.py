@@ -10,7 +10,7 @@ __version__ = "2022.08.4"
 LOGGER = logging.getLogger(__package__)
 
 # Configuration keys:
-CONF_BATTERY_OVERRIDES: Final = "battery_override"
+CONF_BATTERY_OVERRIDE: Final = "battery_override"
 CONF_CONFIG: Final = "config"
 CONF_DEFAULT_BATTERY_STRATEGY: Final = "default_battery_strategy"
 CONF_DIAGNOSTICS: Final = "diagnostics"
@@ -31,7 +31,6 @@ CONF_OUTPUT_UNIT_SYSTEM: Final = "output_unit_system"
 CONF_PORT: Final = "port"
 CONF_RAW_DATA: Final = "raw_data"
 CONF_VERBOSE: Final = "verbose"
-
 
 # Data points (glob):
 DATA_POINT_GLOB_BAROM: Final = "barom"
