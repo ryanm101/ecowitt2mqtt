@@ -57,7 +57,9 @@ HASS_DISCOVERY_SCHEMA = vol.Schema(
 
 MQTT_TOPIC_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_MQTT_TOPIC): cv.string,
+        # We use str instead of cv.string because the CLI will send a value of None
+        # when this option isn't provided and in this case, None isn't a valid value:
+        vol.Required(CONF_MQTT_TOPIC): str,
     },
     extra=vol.ALLOW_EXTRA,
 )
